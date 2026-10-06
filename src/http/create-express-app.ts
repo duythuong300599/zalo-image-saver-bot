@@ -32,9 +32,16 @@ export function createExpressApp(deps: CreateExpressAppDeps): Express {
     (req: Request, res: Response) => {
       res.status(200).json({ ok: true });
       void deps.inFlightTracker.track(deps.bot.processUpdate(req.body)).catch((error: unknown) => {
+        // Dumping the raw body here (not just error.message) is deliberate —
+        // Zalo's real payload shapes for edge cases (unsupported message
+        // types, odd photo responses) aren't fully documented, and without
+        // this a parse/processing failure gives no way to diagnose what was
+        // actually sent.
         console.error(
           "[webhook] processUpdate failed",
           error instanceof Error ? error.message : error,
+          "raw body:",
+          JSON.stringify(req.body).slice(0, 2000),
         );
       });
     },

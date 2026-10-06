@@ -36,6 +36,7 @@ export function createPhotoMessageHandler(
       logger.error("[photo-message-handler] failed", {
         messageId: message.messageId,
         chatId,
+        photoUrl: message.photoUrl,
         error: error instanceof Error ? error.message : String(error),
         status,
       });
