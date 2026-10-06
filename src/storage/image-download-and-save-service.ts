@@ -167,9 +167,9 @@ export function createImageStorage(opts: ImageStorageOptions): ImageStorage {
           // length, so a real rejection can be told apart from a format gap
           // without needing to reproduce it blind next time.
           throw new Error(
-            `${error.message} (content-type: ${contentType ?? "none"}, content-length: ${
-              response.headers.get("content-length") ?? "none"
-            })`,
+            `${error.message} (http-status: ${response.status}, content-type: ${
+              contentType ?? "none"
+            }, content-length: ${response.headers.get("content-length") ?? "none"})`,
             { cause: error },
           );
         }
