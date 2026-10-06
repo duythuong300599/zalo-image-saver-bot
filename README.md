@@ -53,7 +53,10 @@ Script in ra `verification.ok` / `verification.hint`. Lưu ý:
 # 1. Trỏ DNS A record về IP VPS, mở firewall 80/443
 # 2. Clone repo lên VPS
 cp .env.example .env   # điền BOT_TOKEN, WEBHOOK_SECRET, DOMAIN
-mkdir -p data/images && sudo chown 1000:1000 data/images
+# docker-compose.yml bind-mount ảnh vào /mnt/ssd-images/zalo-bot-images (SSD USB
+# gắn ngoài, exFAT, đã set /etc/fstab tự mount lúc boot) — đổi path này trong
+# docker-compose.yml nếu server của bạn không có ổ rời tương tự.
+sudo mkdir -p /mnt/ssd-images/zalo-bot-images && sudo chown 1000:1000 /mnt/ssd-images/zalo-bot-images
 docker compose up -d --build
 docker compose logs -f
 
