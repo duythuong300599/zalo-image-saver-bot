@@ -1,12 +1,5 @@
-import {
-  isRetryableZaloSdkError,
-  retryWithExponentialBackoff,
-} from "../utils/retry-with-exponential-backoff";
 import type { ImageStorage } from "../storage/image-download-and-save-service";
-
-export interface BotMessenger {
-  sendMessage(chatId: string, text: string): Promise<unknown>;
-}
+import type { PhotoReplyBatcher } from "./photo-reply-batcher";
 
 export interface PhotoMessageLike {
   messageId: string;
@@ -14,34 +7,10 @@ export interface PhotoMessageLike {
   photoUrl?: string;
 }
 
-export const SUCCESS_REPLY = "Đã lưu ảnh thành công ✅";
-export const FAILURE_REPLY = "Lưu ảnh thất bại ❌ Vui lòng gửi lại ảnh.";
-
 export interface PhotoMessageHandlerDeps {
-  messenger: BotMessenger;
+  replyBatcher: PhotoReplyBatcher;
   storage: ImageStorage;
   logger?: Pick<Console, "info" | "error">;
-  /** Injectable retry delay fn — lets tests skip real waits between retry attempts. */
-  replyRetrySleep?: (ms: number) => Promise<void>;
-}
-
-/** Best-effort reply: retries transient SDK errors, but a final failure only logs — never throws. */
-async function replyWithRetry(
-  deps: PhotoMessageHandlerDeps,
-  chatId: string,
-  text: string,
-): Promise<void> {
-  try {
-    await retryWithExponentialBackoff(() => deps.messenger.sendMessage(chatId, text), {
-      isRetryable: isRetryableZaloSdkError,
-      sleep: deps.replyRetrySleep,
-    });
-  } catch (error) {
-    (deps.logger ?? console).error("[photo-message-handler] reply failed", {
-      chatId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
 }
 
 export function createPhotoMessageHandler(
@@ -61,7 +30,7 @@ export function createPhotoMessageHandler(
         fileName: saved.fileName,
         bytes: saved.bytes,
       });
-      await replyWithRetry(deps, chatId, SUCCESS_REPLY);
+      deps.replyBatcher.recordOutcome(chatId, "success");
     } catch (error) {
       const status = error instanceof Error && "status" in error ? error.status : undefined;
       logger.error("[photo-message-handler] failed", {
@@ -70,7 +39,7 @@ export function createPhotoMessageHandler(
         error: error instanceof Error ? error.message : String(error),
         status,
       });
-      await replyWithRetry(deps, chatId, FAILURE_REPLY);
+      deps.replyBatcher.recordOutcome(chatId, "failure");
     }
   };
 }

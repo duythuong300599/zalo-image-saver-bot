@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createZaloBot } from "./bot/zalo-bot-client-factory";
 import { loadConfig } from "./config/env-config-loader";
 import { createExpressApp } from "./http/create-express-app";
+import { createInFlightTaskTracker } from "./http/in-flight-task-tracker";
 import { createImageStorage } from "./storage/image-download-and-save-service";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -33,7 +34,8 @@ async function main(): Promise<void> {
     );
   }
 
-  const app = createExpressApp({ bot, webhookSecret: config.webhookSecret });
+  const inFlightTracker = createInFlightTaskTracker();
+  const app = createExpressApp({ bot, webhookSecret: config.webhookSecret, inFlightTracker });
   const server = app.listen(config.port, () => {
     console.log(`[server] listening on port ${config.port}`);
   });
@@ -50,13 +52,20 @@ async function main(): Promise<void> {
     }, SHUTDOWN_TIMEOUT_MS);
 
     server.close(() => {
-      bot
-        .shutdown()
-        .catch((error: unknown) => console.error("[server] bot.shutdown() failed", error))
-        .finally(() => {
-          clearTimeout(forceExitTimer);
-          process.exit(0);
-        });
+      // The webhook route responds before the photo download finishes (see
+      // create-express-app.ts), so server.close() alone wouldn't wait for
+      // it — that race is exactly what truncated a file during this
+      // feature's own manual testing. forceExitTimer above still bounds
+      // the total wait if a download were ever stuck.
+      void inFlightTracker.waitForIdle().then(() => {
+        bot
+          .shutdown()
+          .catch((error: unknown) => console.error("[server] bot.shutdown() failed", error))
+          .finally(() => {
+            clearTimeout(forceExitTimer);
+            process.exit(0);
+          });
+      });
     });
   };
 

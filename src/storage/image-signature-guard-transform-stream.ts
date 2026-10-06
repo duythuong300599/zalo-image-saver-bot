@@ -1,8 +1,8 @@
 import { Transform, type TransformCallback } from "node:stream";
 
 export class UnrecognizedImageSignatureError extends Error {
-  constructor() {
-    super("Downloaded content does not match a known image file signature");
+  constructor(readonly headerHex: string) {
+    super(`Downloaded content does not match a known image file signature (first bytes: ${headerHex})`);
     this.name = "UnrecognizedImageSignatureError";
   }
 }
@@ -39,7 +39,7 @@ export function createImageSignatureGuardTransform(): Transform {
     const header = Buffer.concat(buffered, bufferedLength);
     checked = true;
     if (!matchesKnownImageSignature(header)) {
-      callback(new UnrecognizedImageSignatureError());
+      callback(new UnrecognizedImageSignatureError(header.toString("hex")));
       return;
     }
     buffered = [];
@@ -61,10 +61,13 @@ export function createImageSignatureGuardTransform(): Transform {
       callback();
     },
     flush(callback: TransformCallback) {
-      if (checked || bufferedLength === 0) {
+      if (checked) {
         callback();
         return;
       }
+      // Also covers a fully empty body (bufferedLength === 0): an empty
+      // header never matches a real image signature, so it correctly
+      // fails here instead of silently producing a 0-byte "saved" file.
       checkAndFlush(callback);
     },
   });

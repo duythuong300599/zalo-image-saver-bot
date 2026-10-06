@@ -11,7 +11,10 @@ import {
 } from "../utils/retry-with-exponential-backoff";
 import { createByteLimitTransform } from "./byte-limit-transform-stream";
 import { buildImageFileName, resolveImageExtension } from "./image-file-naming";
-import { createImageSignatureGuardTransform } from "./image-signature-guard-transform-stream";
+import {
+  createImageSignatureGuardTransform,
+  UnrecognizedImageSignatureError,
+} from "./image-signature-guard-transform-stream";
 
 export interface SavedImage {
   filePath: string;
@@ -158,6 +161,18 @@ export function createImageStorage(opts: ImageStorageOptions): ImageStorage {
         );
       } catch (error) {
         await rm(filePath, { force: true });
+        if (error instanceof UnrecognizedImageSignatureError) {
+          // Diagnostic-only: pairs the rejected bytes' hex preview (already
+          // in error.message) with the response's declared content-type and
+          // length, so a real rejection can be told apart from a format gap
+          // without needing to reproduce it blind next time.
+          throw new Error(
+            `${error.message} (content-type: ${contentType ?? "none"}, content-length: ${
+              response.headers.get("content-length") ?? "none"
+            })`,
+            { cause: error },
+          );
+        }
         throw error;
       }
 

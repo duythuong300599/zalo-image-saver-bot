@@ -2,6 +2,10 @@
 
 Bot Zalo (Bot Platform chính thức) nhận webhook, tải ảnh người dùng gửi vào `SAVE_DIR` ngay lập tức, và phản hồi kết quả cho người dùng.
 
+Gửi nhiều ảnh liên tiếp (vd chọn cả album) vẫn lưu từng ảnh riêng biệt, nhưng bot chỉ trả lời **1 tin nhắn tổng hợp** sau 2 giây im lặng cuối cùng (vd "Đã lưu 5 ảnh thành công ✅"), thay vì spam 1 tin/ảnh.
+
+Chat lần đầu (tin nhắn bất kỳ — text, ảnh, sticker...) sẽ nhận **1 tin nhắn chào mừng** giới thiệu bot, chỉ gửi đúng 1 lần cho mỗi `chatId` (lưu trạng thái trong `SAVE_DIR/.known-chats.json`, sống sót qua restart).
+
 ## 1. Tạo bot & lấy token
 
 1. Mở app Zalo → tìm OA **"Zalo Bot Manager"**.
@@ -99,5 +103,6 @@ Không gọi API Zalo thật, không network thật trong unit test — `fetch` 
 - **Rate limit không công bố chính thức**: retry helper dùng backoff nhẹ (3 lần, base 500ms, cap 5s) như phỏng đoán an toàn, không dựa trên số liệu chính thức của Zalo.
 - **Giới hạn 10MB cho ảnh**: không phải spec chính thức của Zalo (Zalo không công bố) — lấy theo default của dự án cộng đồng `zalobot-sdk` làm điểm tham chiếu gần nhất.
 - **Không dedup webhook trùng**: nếu Zalo gửi lại cùng một `messageId` (do timeout/retry phía Zalo), bot sẽ tải và lưu lại — chưa có in-memory dedup theo `messageId` (YAGNI ở giai đoạn hiện tại, response 200 ngay giúp giảm khả năng này).
+- **Reply gộp theo chat, không flush khi shutdown**: nếu server tắt đúng lúc một batch đang trong 2 giây debounce, tin nhắn xác nhận cuối có thể bị mất — nhưng ảnh vẫn đã lưu an toàn trên đĩa trước đó, chỉ mất phần phản hồi.
 - **Không lọc theo loại chat**: bot lưu ảnh từ mọi loại chat gửi tới (private lẫn group), không giới hạn riêng cho nhóm.
 - **Body chính xác của verification request lúc `setWebhook`**: chưa quan sát/ghi nhận được trong quá trình implement (cần log tạm thời lúc chạy E2E thực tế qua ngrok để xác nhận, sau đó xoá log debug).

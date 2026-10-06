@@ -36,6 +36,13 @@ describe("createZaloBot", () => {
     expect(typeof StubBot.instances[0].handlers.get("photo")).toBe("function");
   });
 
+  it("registers a message handler (for the first-contact welcome) on the bot instance", () => {
+    createZaloBot(config, makeStorage());
+
+    expect(StubBot.instances[0].handlers.has("message")).toBe(true);
+    expect(typeof StubBot.instances[0].handlers.get("message")).toBe("function");
+  });
+
   it("logs via console.error when the SDK reports an error", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 

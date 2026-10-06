@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 import { createExpressApp } from "../../src/http/create-express-app";
+import { createInFlightTaskTracker, type InFlightTaskTracker } from "../../src/http/in-flight-task-tracker";
 import type { WebhookBot } from "../../src/bot/zalo-bot-client-factory";
 
 const SECRET = "test-webhook-secret-16";
 const HEADER = "X-Bot-Api-Secret-Token";
 
-function buildApp(bot: WebhookBot) {
-  return createExpressApp({ bot, webhookSecret: SECRET });
+function buildApp(bot: WebhookBot, inFlightTracker: InFlightTaskTracker = createInFlightTaskTracker()) {
+  return createExpressApp({ bot, webhookSecret: SECRET, inFlightTracker });
 }
 
 describe("createExpressApp", () => {
@@ -63,6 +64,28 @@ describe("createExpressApp", () => {
 
     expect(res.status).toBe(200);
     await new Promise((resolve) => setImmediate(resolve));
+  });
+
+  it("tracks processUpdate in the in-flight tracker so shutdown can wait for it", async () => {
+    let resolveProcessUpdate!: () => void;
+    const processUpdate = vi.fn(
+      () => new Promise<void>((resolve) => (resolveProcessUpdate = resolve)),
+    );
+    const inFlightTracker = createInFlightTaskTracker();
+    const app = buildApp({ processUpdate }, inFlightTracker);
+
+    await request(app).post("/webhook").set(HEADER, SECRET).send({});
+
+    let idleResolved = false;
+    const idle = inFlightTracker.waitForIdle().then(() => {
+      idleResolved = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(idleResolved).toBe(false); // processUpdate hasn't resolved yet
+
+    resolveProcessUpdate();
+    await idle;
+    expect(idleResolved).toBe(true);
   });
 
   it("returns 400 on malformed JSON body", async () => {

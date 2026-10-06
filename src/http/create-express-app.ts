@@ -1,11 +1,13 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 
 import type { WebhookBot } from "../bot/zalo-bot-client-factory";
+import type { InFlightTaskTracker } from "./in-flight-task-tracker";
 import { createWebhookSecretTokenMiddleware } from "./webhook-secret-token-middleware";
 
 export interface CreateExpressAppDeps {
   bot: WebhookBot;
   webhookSecret: string;
+  inFlightTracker: InFlightTaskTracker;
 }
 
 /**
@@ -29,7 +31,7 @@ export function createExpressApp(deps: CreateExpressAppDeps): Express {
     createWebhookSecretTokenMiddleware(deps.webhookSecret),
     (req: Request, res: Response) => {
       res.status(200).json({ ok: true });
-      void deps.bot.processUpdate(req.body).catch((error: unknown) => {
+      void deps.inFlightTracker.track(deps.bot.processUpdate(req.body)).catch((error: unknown) => {
         console.error(
           "[webhook] processUpdate failed",
           error instanceof Error ? error.message : error,

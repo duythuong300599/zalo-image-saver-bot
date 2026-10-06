@@ -1,15 +1,17 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import {
-  createPhotoMessageHandler,
-  FAILURE_REPLY,
-  SUCCESS_REPLY,
-  type PhotoMessageLike,
-} from "../../src/bot/photo-message-handler";
+import { createPhotoMessageHandler, type PhotoMessageLike } from "../../src/bot/photo-message-handler";
+import type { PhotoReplyBatcher } from "../../src/bot/photo-reply-batcher";
 import type { ImageStorage } from "../../src/storage/image-download-and-save-service";
 
 function makeMessage(overrides: Partial<PhotoMessageLike> = {}): PhotoMessageLike {
   return { messageId: "m1", chat: { id: "c1" }, photoUrl: "https://x/y.jpg", ...overrides };
+}
+
+function makeReplyBatcher(): PhotoReplyBatcher & {
+  recordOutcome: Mock<PhotoReplyBatcher["recordOutcome"]>;
+} {
+  return { recordOutcome: vi.fn() };
 }
 
 const quietLogger = { info: vi.fn(), error: vi.fn() };
@@ -19,84 +21,52 @@ afterEach(() => {
 });
 
 describe("createPhotoMessageHandler", () => {
-  it("sends the success reply after a successful download", async () => {
-    const sendMessage = vi.fn().mockResolvedValue(undefined);
+  it("records a success outcome after a successful download", async () => {
+    const replyBatcher = makeReplyBatcher();
     const storage: ImageStorage = {
       downloadAndSave: vi.fn().mockResolvedValue({ filePath: "/x", fileName: "x.jpg", bytes: 1 }),
     };
-    const handler = createPhotoMessageHandler({
-      messenger: { sendMessage },
-      storage,
-      logger: quietLogger,
-    });
+    const handler = createPhotoMessageHandler({ replyBatcher, storage, logger: quietLogger });
 
     await handler(makeMessage());
 
-    expect(sendMessage).toHaveBeenCalledWith("c1", SUCCESS_REPLY);
+    expect(replyBatcher.recordOutcome).toHaveBeenCalledWith("c1", "success");
   });
 
-  it("sends the failure reply and logs when storage throws", async () => {
-    const sendMessage = vi.fn().mockResolvedValue(undefined);
+  it("records a failure outcome and logs when storage throws", async () => {
+    const replyBatcher = makeReplyBatcher();
     const storage: ImageStorage = {
       downloadAndSave: vi.fn().mockRejectedValue(new Error("download failed")),
     };
-    const handler = createPhotoMessageHandler({
-      messenger: { sendMessage },
-      storage,
-      logger: quietLogger,
-    });
+    const handler = createPhotoMessageHandler({ replyBatcher, storage, logger: quietLogger });
 
     await handler(makeMessage());
 
-    expect(sendMessage).toHaveBeenCalledWith("c1", FAILURE_REPLY);
+    expect(replyBatcher.recordOutcome).toHaveBeenCalledWith("c1", "failure");
     expect(quietLogger.error).toHaveBeenCalled();
   });
 
   it("does nothing when the message has no photoUrl", async () => {
-    const sendMessage = vi.fn();
+    const replyBatcher = makeReplyBatcher();
     const downloadAndSave = vi.fn();
     const handler = createPhotoMessageHandler({
-      messenger: { sendMessage },
+      replyBatcher,
       storage: { downloadAndSave },
       logger: quietLogger,
     });
 
     await handler(makeMessage({ photoUrl: undefined }));
 
-    expect(sendMessage).not.toHaveBeenCalled();
+    expect(replyBatcher.recordOutcome).not.toHaveBeenCalled();
     expect(downloadAndSave).not.toHaveBeenCalled();
   });
 
-  it("retries a transient sendMessage failure named NetworkError then succeeds", async () => {
-    const networkError = new Error("temporary");
-    networkError.name = "NetworkError";
-    const sendMessage = vi.fn().mockRejectedValueOnce(networkError).mockResolvedValue(undefined);
+  it("never throws even when downloadAndSave fails", async () => {
+    const replyBatcher = makeReplyBatcher();
     const storage: ImageStorage = {
-      downloadAndSave: vi.fn().mockResolvedValue({ filePath: "/x", fileName: "x.jpg", bytes: 1 }),
+      downloadAndSave: vi.fn().mockRejectedValue(new Error("down")),
     };
-    const handler = createPhotoMessageHandler({
-      messenger: { sendMessage },
-      storage,
-      logger: quietLogger,
-      replyRetrySleep: async () => {},
-    });
-
-    await handler(makeMessage());
-
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-  });
-
-  it("never throws even when sendMessage fails on every attempt", async () => {
-    const sendMessage = vi.fn().mockRejectedValue(new Error("down"));
-    const storage: ImageStorage = {
-      downloadAndSave: vi.fn().mockResolvedValue({ filePath: "/x", fileName: "x.jpg", bytes: 1 }),
-    };
-    const handler = createPhotoMessageHandler({
-      messenger: { sendMessage },
-      storage,
-      logger: quietLogger,
-      replyRetrySleep: async () => {},
-    });
+    const handler = createPhotoMessageHandler({ replyBatcher, storage, logger: quietLogger });
 
     await expect(handler(makeMessage())).resolves.toBeUndefined();
   });

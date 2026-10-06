@@ -134,7 +134,7 @@ describe("createImageStorage.downloadAndSave", () => {
 
     await expect(
       storage.downloadAndSave("https://cdn.example.com/fake.png", "msg-1"),
-    ).rejects.toThrow(/signature/i);
+    ).rejects.toThrow(/signature.*content-type: image\/png/is);
     expect(await fs.readdir(tmpDir)).toHaveLength(0);
   });
 
