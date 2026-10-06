@@ -9,8 +9,13 @@ services:
       PORT: "3000"
     volumes:
       - /mnt/ssd-images/zalo-bot-images:/data/images # bind mount: images land directly on the host SSD
-    expose: ["3000"]
-    networks: [web]
+    # No reverse proxy here — this server has no public IP (reached only via
+    # a Cloudflare Tunnel, same as ssh.thuongtd.cloud). Cloudflare terminates
+    # TLS at their edge and the Tunnel's dashboard-configured Public Hostname
+    # routes straight to this published host port, so Caddy/Let's Encrypt
+    # would have nothing reachable to issue a cert against.
+    ports:
+      - "3002:3000"
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -21,22 +26,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-  caddy:
-    image: caddy:2.10-alpine
-    restart: unless-stopped
-    ports: ["80:80", "443:443", "443:443/udp"]
-    environment:
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      app:
-        condition: service_healthy
-    networks: [web]
-volumes:
-  caddy_data:
-  caddy_config:
-networks:
-  web:

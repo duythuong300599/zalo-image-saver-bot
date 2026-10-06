@@ -74,10 +74,10 @@ jobs:
           EOF
 
       # Server chỉ cần vài file này để chạy container — không cần clone toàn bộ source code.
-      - name: Copy docker-compose.yml + Caddyfile + deploy.sh to server
+      - name: Copy docker-compose.yml + deploy.sh to server
         run: |
           ssh deploy-server "mkdir -p ~/zalo-image-saver-bot"
-          scp docker-compose.yml Caddyfile deploy.sh deploy-server:~/zalo-image-saver-bot/
+          scp docker-compose.yml deploy.sh deploy-server:~/zalo-image-saver-bot/
 
       - name: Run deploy.sh on server
         env:

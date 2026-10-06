@@ -47,26 +47,36 @@ Script in ra `verification.ok` / `verification.hint`. Lưu ý:
 - Webhook và `getUpdates` (polling) loại trừ nhau.
 - Đổi từ ngrok sang VPS (hoặc ngược lại) → phải `set-webhook` lại vì URL thay đổi.
 
-## 4. Deploy VPS (Docker Compose + Caddy)
+## 4. Deploy (Docker Compose, qua Cloudflare Tunnel)
 
+Server không có IP public (chỉ lộ qua Cloudflare Tunnel đã cài sẵn — `cloudflared` chạy
+dạng systemd service, ingress rule cấu hình trên Cloudflare Zero Trust dashboard, không
+phải file local). Vì vậy **không dùng Caddy/Let's Encrypt** — container publish port
+thẳng ra host (`3002:3000`), Cloudflare lo phần TLS + routing public hostname.
+
+**Lần đầu deploy (làm trên server):**
 ```bash
-# 1. Trỏ DNS A record về IP VPS, mở firewall 80/443
-# 2. Clone repo lên VPS
-cp .env.example .env   # điền BOT_TOKEN, WEBHOOK_SECRET, DOMAIN
-# docker-compose.yml bind-mount ảnh vào /mnt/ssd-images/zalo-bot-images (SSD USB
-# gắn ngoài, exFAT, đã set /etc/fstab tự mount lúc boot) — đổi path này trong
-# docker-compose.yml nếu server của bạn không có ổ rời tương tự.
+mkdir -p ~/zalo-image-saver-bot && cd ~/zalo-image-saver-bot
+cp .env.example .env   # điền BOT_TOKEN, WEBHOOK_SECRET thật
 sudo mkdir -p /mnt/ssd-images/zalo-bot-images && sudo chown 1000:1000 /mnt/ssd-images/zalo-bot-images
-docker compose up -d --build
-docker compose logs -f
-
-# 3. Set webhook production (chạy từ máy local với .env prod, hoặc trong container):
-npm run set-webhook -- https://$DOMAIN/webhook
-# hoặc:
-docker compose run --rm app node build/scripts/set-webhook-cli.js https://$DOMAIN/webhook
+# copy docker-compose.yml từ repo vào đây (hoặc để GitHub Actions tự scp lên, xem bên dưới)
+docker compose pull && docker compose up -d
 ```
 
-App không publish port ra host — chỉ Caddy mở 80/443 và reverse-proxy vào `app:3000` nội bộ network Docker.
+**Route public hostname (làm 1 lần, trên Cloudflare Zero Trust dashboard):**
+Networks → Tunnels → chọn tunnel đang chạy → Public Hostname → Add:
+hostname `zb.thuongtd.cloud` → Service `http://localhost:3002`.
+
+**Set webhook trỏ về hostname đó:**
+```bash
+WEBHOOK_URL=https://zb.thuongtd.cloud/webhook npm run set-webhook
+```
+
+**CI/CD tự động:** mỗi lần push lên nhánh `master`, GitHub Actions
+(`.github/workflows/deploy.yml`) build image, push lên GHCR, rồi SSH vào
+server (qua `cloudflared access ssh`, cùng cơ chế với `ssh.thuongtd.cloud`)
+để `scp docker-compose.yml` + chạy `deploy.sh` (`docker compose pull && up -d`).
+File `.env` trên server **không** bị ghi đè — chỉnh sửa trực tiếp trên server khi cần.
 
 ## Env vars
 
@@ -77,7 +87,6 @@ App không publish port ra host — chỉ Caddy mở 80/443 và reverse-proxy v�
 | `SAVE_DIR` | Có | Thư mục lưu ảnh; production set `/data/images` (đã hardcode trong Dockerfile/compose) |
 | `PORT` | Không | Default `3000` |
 | `WEBHOOK_URL` | Không | Chỉ dùng cho `npm run set-webhook` |
-| `DOMAIN` | Không | Chỉ dùng cho Caddy (compose) |
 
 ## Scripts
 
