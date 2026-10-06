@@ -84,7 +84,8 @@ describe("retryWithExponentialBackoff", () => {
 });
 
 describe("isRetryableHttpOrNetworkError", () => {
-  it("treats 429 and 5xx as retryable", () => {
+  it("treats 202, 429, and 5xx as retryable", () => {
+    expect(isRetryableHttpOrNetworkError(new HttpStatusError(202, "photo not ready"))).toBe(true);
     expect(isRetryableHttpOrNetworkError(new HttpStatusError(429, "rate limited"))).toBe(true);
     expect(isRetryableHttpOrNetworkError(new HttpStatusError(503, "unavailable"))).toBe(true);
   });

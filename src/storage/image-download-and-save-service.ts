@@ -125,6 +125,15 @@ export function createImageStorage(opts: ImageStorageOptions): ImageStorage {
           const res = await fetch(photoUrl, {
             signal: AbortSignal.timeout(fetchTimeoutMs),
           });
+          // Zalo's CDN returns 202 (empty body) when a photo hasn't finished
+          // processing yet — observed reliably when several photos are sent
+          // in one burst and the webhook fires before the CDN catches up.
+          // 202 is in the 2xx "ok" range, so without this check it would
+          // sail past the !res.ok guard and only fail later, confusingly,
+          // at the signature check with an empty body.
+          if (res.status === 202) {
+            throw new HttpStatusError(202, "Photo not ready yet on Zalo's CDN (202 Accepted)");
+          }
           if (!res.ok) {
             throw new HttpStatusError(res.status, `Download failed with status ${res.status}`);
           }

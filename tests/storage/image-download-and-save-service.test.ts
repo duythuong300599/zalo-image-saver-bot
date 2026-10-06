@@ -90,6 +90,20 @@ describe("createImageStorage.downloadAndSave", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries on 202 (Zalo CDN 'photo not ready yet') then succeeds once the photo is ready", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(pngResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = createImageStorage({ saveDir: tmpDir, retrySleep: async () => {} });
+
+    const saved = await storage.downloadAndSave("https://cdn.example.com/a.png", "msg-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(saved.bytes).toBeGreaterThan(0);
+  });
+
   it("throws on 404 without retrying and leaves no file behind", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);

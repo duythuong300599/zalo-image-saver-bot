@@ -71,10 +71,14 @@ export class HttpStatusError extends Error {
   }
 }
 
-/** Retryable: HTTP 429/5xx, or a network-level fetch failure/timeout. */
+/**
+ * Retryable: HTTP 429/5xx, a network-level fetch failure/timeout, or 202
+ * (Zalo's CDN "photo not processed yet" signal — see
+ * image-download-and-save-service.ts for how 202 gets surfaced here).
+ */
 export function isRetryableHttpOrNetworkError(error: unknown): boolean {
   if (error instanceof HttpStatusError) {
-    return error.status === 429 || error.status >= 500;
+    return error.status === 202 || error.status === 429 || error.status >= 500;
   }
   if (error instanceof Error) {
     if (error.name === "AbortError" || error.name === "TimeoutError") return true;
