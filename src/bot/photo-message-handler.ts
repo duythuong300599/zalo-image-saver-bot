@@ -30,7 +30,7 @@ export function createPhotoMessageHandler(
         fileName: saved.fileName,
         bytes: saved.bytes,
       });
-      deps.replyBatcher.recordOutcome(chatId, "success");
+      deps.replyBatcher.recordSuccess(chatId);
     } catch (error) {
       const status = error instanceof Error && "status" in error ? error.status : undefined;
       logger.error("[photo-message-handler] failed", {
@@ -40,7 +40,7 @@ export function createPhotoMessageHandler(
         error: error instanceof Error ? error.message : String(error),
         status,
       });
-      deps.replyBatcher.recordOutcome(chatId, "failure");
+      deps.replyBatcher.recordFailure(chatId, message.messageId);
     }
   };
 }

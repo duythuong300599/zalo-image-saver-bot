@@ -9,9 +9,10 @@ function makeMessage(overrides: Partial<PhotoMessageLike> = {}): PhotoMessageLik
 }
 
 function makeReplyBatcher(): PhotoReplyBatcher & {
-  recordOutcome: Mock<PhotoReplyBatcher["recordOutcome"]>;
+  recordSuccess: Mock<PhotoReplyBatcher["recordSuccess"]>;
+  recordFailure: Mock<PhotoReplyBatcher["recordFailure"]>;
 } {
-  return { recordOutcome: vi.fn() };
+  return { recordSuccess: vi.fn(), recordFailure: vi.fn() };
 }
 
 const quietLogger = { info: vi.fn(), error: vi.fn() };
@@ -21,7 +22,7 @@ afterEach(() => {
 });
 
 describe("createPhotoMessageHandler", () => {
-  it("records a success outcome after a successful download", async () => {
+  it("records a success after a successful download", async () => {
     const replyBatcher = makeReplyBatcher();
     const storage: ImageStorage = {
       downloadAndSave: vi.fn().mockResolvedValue({ filePath: "/x", fileName: "x.jpg", bytes: 1 }),
@@ -30,19 +31,21 @@ describe("createPhotoMessageHandler", () => {
 
     await handler(makeMessage());
 
-    expect(replyBatcher.recordOutcome).toHaveBeenCalledWith("c1", "success");
+    expect(replyBatcher.recordSuccess).toHaveBeenCalledWith("c1");
+    expect(replyBatcher.recordFailure).not.toHaveBeenCalled();
   });
 
-  it("records a failure outcome and logs when storage throws", async () => {
+  it("records a failure (with the messageId, for reply-quoting) and logs when storage throws", async () => {
     const replyBatcher = makeReplyBatcher();
     const storage: ImageStorage = {
       downloadAndSave: vi.fn().mockRejectedValue(new Error("download failed")),
     };
     const handler = createPhotoMessageHandler({ replyBatcher, storage, logger: quietLogger });
 
-    await handler(makeMessage());
+    await handler(makeMessage({ messageId: "m1" }));
 
-    expect(replyBatcher.recordOutcome).toHaveBeenCalledWith("c1", "failure");
+    expect(replyBatcher.recordFailure).toHaveBeenCalledWith("c1", "m1");
+    expect(replyBatcher.recordSuccess).not.toHaveBeenCalled();
     expect(quietLogger.error).toHaveBeenCalled();
   });
 
@@ -57,7 +60,8 @@ describe("createPhotoMessageHandler", () => {
 
     await handler(makeMessage({ photoUrl: undefined }));
 
-    expect(replyBatcher.recordOutcome).not.toHaveBeenCalled();
+    expect(replyBatcher.recordSuccess).not.toHaveBeenCalled();
+    expect(replyBatcher.recordFailure).not.toHaveBeenCalled();
     expect(downloadAndSave).not.toHaveBeenCalled();
   });
 

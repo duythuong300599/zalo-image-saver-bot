@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  buildBatchReplyText,
+  buildCombinedFailureText,
+  buildSuccessSummaryText,
   createPhotoReplyBatcher,
   FAILURE_REPLY,
   SUCCESS_REPLY,
@@ -23,27 +24,23 @@ function makeMessenger(): BotMessenger & { sendMessage: ReturnType<typeof vi.fn>
   return { sendMessage: vi.fn().mockResolvedValue(undefined) };
 }
 
-describe("buildBatchReplyText", () => {
-  it("returns the plain single-photo success text for exactly one success", () => {
-    expect(buildBatchReplyText(1, 0)).toBe(SUCCESS_REPLY);
+describe("buildSuccessSummaryText", () => {
+  it("returns the plain single-photo text for exactly one success", () => {
+    expect(buildSuccessSummaryText(1)).toBe(SUCCESS_REPLY);
   });
 
-  it("returns the plain single-photo failure text for exactly one failure", () => {
-    expect(buildBatchReplyText(0, 1)).toBe(FAILURE_REPLY);
+  it("pluralizes for more than one success", () => {
+    expect(buildSuccessSummaryText(5)).toBe("Đã lưu 5 ảnh thành công ✅");
+  });
+});
+
+describe("buildCombinedFailureText", () => {
+  it("returns the plain single-photo text for exactly one failure", () => {
+    expect(buildCombinedFailureText(1)).toBe(FAILURE_REPLY);
   });
 
-  it("pluralizes an all-success batch", () => {
-    expect(buildBatchReplyText(5, 0)).toBe("Đã lưu 5 ảnh thành công ✅");
-  });
-
-  it("pluralizes an all-failure batch", () => {
-    expect(buildBatchReplyText(0, 3)).toBe("Lưu 3 ảnh thất bại ❌ Vui lòng gửi lại các ảnh đó.");
-  });
-
-  it("summarizes a mixed success/failure batch", () => {
-    expect(buildBatchReplyText(4, 2)).toBe(
-      "Đã lưu 4 ảnh thành công ✅, 2 ảnh lỗi ❌ vui lòng gửi lại ảnh lỗi.",
-    );
+  it("pluralizes for more than one failure", () => {
+    expect(buildCombinedFailureText(3)).toBe("Lưu 3 ảnh thất bại ❌ Vui lòng gửi lại các ảnh đó.");
   });
 });
 
@@ -52,46 +49,88 @@ describe("createPhotoReplyBatcher", () => {
     const messenger = makeMessenger();
     const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
 
-    batcher.recordOutcome("c1", "success");
-    batcher.recordOutcome("c1", "success");
-    batcher.recordOutcome("c1", "success");
+    batcher.recordSuccess("c1");
+    batcher.recordSuccess("c1");
+    batcher.recordSuccess("c1");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(messenger.sendMessage).toHaveBeenCalledTimes(1);
-    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", "Đã lưu 3 ảnh thành công ✅");
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", "Đã lưu 3 ảnh thành công ✅", undefined);
   });
 
   it("resets the quiet-period timer on each new photo, so a reply only fires after the burst ends", async () => {
     const messenger = makeMessenger();
     const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
 
-    batcher.recordOutcome("c1", "success");
+    batcher.recordSuccess("c1");
     await vi.advanceTimersByTimeAsync(1500);
-    batcher.recordOutcome("c1", "success"); // arrives before the first timer would fire
+    batcher.recordSuccess("c1"); // arrives before the first timer would fire
     await vi.advanceTimersByTimeAsync(1500);
 
     expect(messenger.sendMessage).not.toHaveBeenCalled(); // still within 2000ms of the 2nd photo
 
     await vi.advanceTimersByTimeAsync(500);
     expect(messenger.sendMessage).toHaveBeenCalledTimes(1);
-    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", "Đã lưu 2 ảnh thành công ✅");
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", "Đã lưu 2 ảnh thành công ✅", undefined);
   });
 
   it("keeps separate batches per chatId", async () => {
     const messenger = makeMessenger();
     const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
 
-    batcher.recordOutcome("c1", "success");
-    batcher.recordOutcome("c2", "success");
-    batcher.recordOutcome("c2", "failure");
+    batcher.recordSuccess("c1");
+    batcher.recordSuccess("c2");
+    batcher.recordSuccess("c2");
     await vi.advanceTimersByTimeAsync(2000);
 
     expect(messenger.sendMessage).toHaveBeenCalledTimes(2);
-    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", SUCCESS_REPLY);
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", SUCCESS_REPLY, undefined);
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c2", "Đã lưu 2 ảnh thành công ✅", undefined);
+  });
+
+  it("reply-quotes each failed photo individually (up to the cap) so the user can tell which one failed", async () => {
+    const messenger = makeMessenger();
+    const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
+
+    batcher.recordFailure("c1", "m1");
+    batcher.recordFailure("c1", "m2");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(messenger.sendMessage).toHaveBeenCalledTimes(2);
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", FAILURE_REPLY, { reply_to_message_id: "m1" });
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", FAILURE_REPLY, { reply_to_message_id: "m2" });
+  });
+
+  it("falls back to one combined failure message when failures exceed the individual-reply cap", async () => {
+    const messenger = makeMessenger();
+    const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
+
+    for (let i = 0; i < 6; i += 1) batcher.recordFailure("c1", `m${i}`);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(messenger.sendMessage).toHaveBeenCalledTimes(1);
     expect(messenger.sendMessage).toHaveBeenCalledWith(
-      "c2",
-      "Đã lưu 1 ảnh thành công ✅, 1 ảnh lỗi ❌ vui lòng gửi lại ảnh lỗi.",
+      "c1",
+      "Lưu 6 ảnh thất bại ❌ Vui lòng gửi lại các ảnh đó.",
+      undefined,
     );
+  });
+
+  it("sends the success summary before the individual failure replies", async () => {
+    const messenger = makeMessenger();
+    const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
+
+    batcher.recordSuccess("c1");
+    batcher.recordFailure("c1", "m1");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(messenger.sendMessage).toHaveBeenCalledTimes(2);
+    expect(messenger.sendMessage.mock.calls[0]).toEqual(["c1", SUCCESS_REPLY, undefined]);
+    expect(messenger.sendMessage.mock.calls[1]).toEqual([
+      "c1",
+      FAILURE_REPLY,
+      { reply_to_message_id: "m1" },
+    ]);
   });
 
   it("logs instead of throwing when sendMessage keeps failing", async () => {
@@ -103,7 +142,7 @@ describe("createPhotoReplyBatcher", () => {
       logger: quietLogger,
     });
 
-    batcher.recordOutcome("c1", "success");
+    batcher.recordSuccess("c1");
     await vi.advanceTimersByTimeAsync(2000);
     await vi.runOnlyPendingTimersAsync(); // let the internal retry's sleep() resolve
 
