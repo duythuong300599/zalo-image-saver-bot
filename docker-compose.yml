@@ -1,7 +1,7 @@
 services:
   app:
-    build: .
-    image: zalo-image-saver-bot:local
+    build: . # used by local `docker compose up --build`; CI/CD pulls the same tag instead
+    image: ghcr.io/duythuong300599/zalo-image-saver-bot:latest
     restart: unless-stopped
     env_file: .env
     environment:
