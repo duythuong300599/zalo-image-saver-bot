@@ -22,6 +22,7 @@ export function createPhotoMessageHandler(
     if (!message.photoUrl) return;
 
     const chatId = message.chat.id;
+    deps.replyBatcher.recordStart(chatId);
     try {
       const saved = await deps.storage.downloadAndSave(message.photoUrl, message.messageId);
       logger.info("[photo-message-handler] saved", {

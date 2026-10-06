@@ -9,10 +9,11 @@ function makeMessage(overrides: Partial<PhotoMessageLike> = {}): PhotoMessageLik
 }
 
 function makeReplyBatcher(): PhotoReplyBatcher & {
+  recordStart: Mock<PhotoReplyBatcher["recordStart"]>;
   recordSuccess: Mock<PhotoReplyBatcher["recordSuccess"]>;
   recordFailure: Mock<PhotoReplyBatcher["recordFailure"]>;
 } {
-  return { recordSuccess: vi.fn(), recordFailure: vi.fn() };
+  return { recordStart: vi.fn(), recordSuccess: vi.fn(), recordFailure: vi.fn() };
 }
 
 const quietLogger = { info: vi.fn(), error: vi.fn() };
@@ -31,6 +32,7 @@ describe("createPhotoMessageHandler", () => {
 
     await handler(makeMessage());
 
+    expect(replyBatcher.recordStart).toHaveBeenCalledWith("c1");
     expect(replyBatcher.recordSuccess).toHaveBeenCalledWith("c1");
     expect(replyBatcher.recordFailure).not.toHaveBeenCalled();
   });
@@ -60,6 +62,7 @@ describe("createPhotoMessageHandler", () => {
 
     await handler(makeMessage({ photoUrl: undefined }));
 
+    expect(replyBatcher.recordStart).not.toHaveBeenCalled();
     expect(replyBatcher.recordSuccess).not.toHaveBeenCalled();
     expect(replyBatcher.recordFailure).not.toHaveBeenCalled();
     expect(downloadAndSave).not.toHaveBeenCalled();

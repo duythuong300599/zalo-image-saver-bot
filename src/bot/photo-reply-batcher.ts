@@ -12,6 +12,8 @@ export interface BotMessenger {
 }
 
 export interface PhotoReplyBatcher {
+  /** Call when a photo's download starts — keeps the batch open until every started photo has resolved. */
+  recordStart(chatId: string): void;
   /** Call once per photo that downloaded and saved successfully. */
   recordSuccess(chatId: string): void;
   /** Call once per photo that failed — messageId is reply-quoted so the user can tell which photo it was. */
@@ -52,22 +54,33 @@ const MAX_INDIVIDUAL_FAILURE_REPLIES = 5;
 interface PendingBatch {
   successCount: number;
   failedMessageIds: string[];
+  /** Photos that have started downloading but not yet resolved (success or failure). */
+  pendingStarts: number;
   timer: ReturnType<typeof setTimeout> | null;
 }
 
 /**
  * Zalo delivers each photo of a multi-image send as its own webhook event —
- * there is no album/media-group id in the payload — so sending 5 photos at
- * once fires 5 separate handler calls. Successes are coalesced per chatId
+ * there is no album/media-group id in the payload — so sending N photos at
+ * once fires N separate handler calls. Successes are coalesced per chatId
  * into one summary message after `debounceMs` of silence from that chat.
  * Failures are reply-quoted to the specific failed photo instead (up to
  * MAX_INDIVIDUAL_FAILURE_REPLIES) so the user knows which one to resend,
  * not just how many.
  *
- * Note: a pending batch still in its debounce window at process shutdown is
- * not flushed (not wired into server.ts's shutdown sequence) — the photos
- * are already safely on disk by then, only the confirmation reply would be
- * missed in that rare race.
+ * `pendingStarts` exists because photo downloads retry at different speeds
+ * (see image-download-and-save-service.ts's 202-retry handling) — in a
+ * burst of ~20+ photos, one straggler can resolve several seconds after the
+ * rest. Without tracking in-flight starts, the debounce timer fires on the
+ * fast photos' silence alone, undercounts the batch, and the straggler ends
+ * up in its own trailing reply — confusing ("why does it say 23 when I sent
+ * 24?") even though nothing was actually lost. The flush only proceeds once
+ * every started photo has resolved.
+ *
+ * Note: a pending batch still waiting on in-flight photos at process
+ * shutdown is not flushed (not wired into server.ts's shutdown sequence) —
+ * the photos are already safely on disk by then, only the confirmation
+ * reply would be missed in that rare race.
  */
 export function createPhotoReplyBatcher(opts: PhotoReplyBatcherOptions): PhotoReplyBatcher {
   const { messenger, debounceMs = DEFAULT_DEBOUNCE_MS, replyRetrySleep } = opts;
@@ -99,6 +112,11 @@ export function createPhotoReplyBatcher(opts: PhotoReplyBatcherOptions): PhotoRe
   }
 
   async function flush(chatId: string, batch: PendingBatch): Promise<void> {
+    // A straggler is still mid-download/retry — leave the batch open. The
+    // next recordSuccess/recordFailure call reschedules this timer anyway,
+    // so nothing further needs to happen here.
+    if (batch.pendingStarts > 0) return;
+
     pending.delete(chatId);
 
     if (batch.successCount > 0) {
@@ -120,7 +138,12 @@ export function createPhotoReplyBatcher(opts: PhotoReplyBatcherOptions): PhotoRe
   function getOrCreateBatch(chatId: string): PendingBatch {
     const existing = pending.get(chatId);
     if (existing) return existing;
-    const batch: PendingBatch = { successCount: 0, failedMessageIds: [], timer: null };
+    const batch: PendingBatch = {
+      successCount: 0,
+      failedMessageIds: [],
+      pendingStarts: 0,
+      timer: null,
+    };
     pending.set(chatId, batch);
     return batch;
   }
@@ -131,14 +154,24 @@ export function createPhotoReplyBatcher(opts: PhotoReplyBatcherOptions): PhotoRe
   }
 
   return {
+    recordStart(chatId: string): void {
+      const batch = getOrCreateBatch(chatId);
+      batch.pendingStarts += 1;
+      // Don't (re)schedule a flush here — there's nothing to report yet,
+      // and an existing timer from an earlier-finished photo in this same
+      // batch is left running; it'll see pendingStarts > 0 and no-op until
+      // this photo resolves and reschedules it for real.
+    },
     recordSuccess(chatId: string): void {
       const batch = getOrCreateBatch(chatId);
       batch.successCount += 1;
+      batch.pendingStarts = Math.max(0, batch.pendingStarts - 1);
       rescheduleFlush(chatId, batch);
     },
     recordFailure(chatId: string, messageId: string): void {
       const batch = getOrCreateBatch(chatId);
       batch.failedMessageIds.push(messageId);
+      batch.pendingStarts = Math.max(0, batch.pendingStarts - 1);
       rescheduleFlush(chatId, batch);
     },
   };

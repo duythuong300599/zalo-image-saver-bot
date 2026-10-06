@@ -2,7 +2,7 @@
 
 Bot Zalo (Bot Platform chính thức) nhận webhook, tải ảnh người dùng gửi vào `SAVE_DIR` ngay lập tức, và phản hồi kết quả cho người dùng.
 
-Gửi nhiều ảnh liên tiếp (vd chọn cả album) vẫn lưu từng ảnh riêng biệt. Ảnh lưu thành công được gộp **1 tin nhắn tổng hợp** sau 2 giây im lặng cuối cùng (vd "Đã lưu 5 ảnh thành công ✅"). Ảnh lỗi thì bot **reply trực tiếp vào đúng ảnh đó** (tối đa 5 ảnh lỗi/batch — quá số này thì gộp lại thành 1 tin đếm số lượng để tránh spam) để bạn biết chính xác ảnh nào cần gửi lại.
+Gửi nhiều ảnh liên tiếp (vd chọn cả album) vẫn lưu từng ảnh riêng biệt. Batch chỉ chốt (và gộp **1 tin nhắn tổng hợp**, vd "Đã lưu 24 ảnh thành công ✅") sau khi **tất cả** ảnh trong đợt gửi đã xử lý xong (kể cả ảnh xử lý chậm do CDN Zalo chưa kịp — xem mục retry 202 bên dưới) **và** 2 giây im lặng tiếp theo không có ảnh mới. Ảnh lỗi thì bot **reply trực tiếp vào đúng ảnh đó** (tối đa 5 ảnh lỗi/batch — quá số này thì gộp lại thành 1 tin đếm số lượng để tránh spam) để bạn biết chính xác ảnh nào cần gửi lại.
 
 Chat lần đầu (tin nhắn bất kỳ — text, ảnh, sticker...) sẽ nhận **1 tin nhắn chào mừng** giới thiệu bot, chỉ gửi đúng 1 lần cho mỗi `chatId` (lưu trạng thái trong `SAVE_DIR/.known-chats.json`, sống sót qua restart).
 

@@ -133,6 +133,27 @@ describe("createPhotoReplyBatcher", () => {
     ]);
   });
 
+  it("keeps the batch open past the debounce window while a straggler photo is still in flight", async () => {
+    const messenger = makeMessenger();
+    const batcher = createPhotoReplyBatcher({ messenger, debounceMs: 2000, replyRetrySleep: async () => {} });
+
+    // 2 photos start together; only the first resolves quickly.
+    batcher.recordStart("c1");
+    batcher.recordStart("c1");
+    batcher.recordSuccess("c1");
+    await vi.advanceTimersByTimeAsync(2000);
+
+    // Debounce window elapsed, but photo #2 never resolved — must not flush
+    // (and must not undercount) yet.
+    expect(messenger.sendMessage).not.toHaveBeenCalled();
+
+    batcher.recordSuccess("c1"); // the straggler finally resolves
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(messenger.sendMessage).toHaveBeenCalledTimes(1);
+    expect(messenger.sendMessage).toHaveBeenCalledWith("c1", "Đã lưu 2 ảnh thành công ✅", undefined);
+  });
+
   it("logs instead of throwing when sendMessage keeps failing", async () => {
     const messenger: BotMessenger = { sendMessage: vi.fn().mockRejectedValue(new Error("down")) };
     const batcher = createPhotoReplyBatcher({
