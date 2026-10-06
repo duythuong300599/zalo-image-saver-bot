@@ -1,0 +1,14 @@
+node_modules/
+build/
+.git/
+.env
+.env.*
+!.env.example
+data/
+tests/
+coverage/
+*.log
+Dockerfile
+docker-compose.yml
+Caddyfile
+README.md

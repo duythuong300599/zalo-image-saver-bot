@@ -1,0 +1,36 @@
+{
+  "name": "zalo-image-saver-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zalo Bot webhook that downloads photos sent to the bot and saves them to disk.",
+  "main": "build/server.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node build/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "set-webhook": "tsx --env-file=.env src/scripts/set-webhook-cli.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "5.2.1",
+    "zalo-bot-js": "0.2.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^5.0.2",
+    "supertest": "^7.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

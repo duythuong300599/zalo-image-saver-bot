@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    image: zalo-image-saver-bot:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SAVE_DIR: /data/images # overrides the dev value from .env
+      PORT: "3000"
+    volumes:
+      - ./data/images:/data/images # bind mount: images land directly on the host
+    expose: ["3000"]
+    networks: [web]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [web]
+volumes:
+  caddy_data:
+  caddy_config:
+networks:
+  web:
