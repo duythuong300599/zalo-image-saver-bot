@@ -139,7 +139,16 @@ export function createImageStorage(opts: ImageStorageOptions): ImageStorage {
           }
           return res;
         },
-        { isRetryable: isRetryableHttpOrNetworkError, sleep: retrySleep },
+        {
+          isRetryable: isRetryableHttpOrNetworkError,
+          sleep: retrySleep,
+          // Larger bursts (e.g. ~20 photos sent at once) mean more photos
+          // still mid-processing on Zalo's CDN (202) at fetch time, and it
+          // takes longer for the CDN to work through the whole batch — the
+          // generic 3-attempt/~2s default isn't enough headroom here, so
+          // this call gets its own longer budget (~7.5s across 5 attempts).
+          maxAttempts: 5,
+        },
       );
       // fetch() follows redirects by default; re-validate the *final*
       // response.url so a redirect can't hand us a private/loopback target.
